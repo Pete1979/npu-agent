@@ -208,25 +208,46 @@ class MCPAgent:
         full_prompt = f"""{self.system_context}
 {history_context}
 
-You have access to system tools via MCP (Model Context Protocol).
+You are a helpful AI assistant with access to system tools via MCP (Model Context Protocol).
 
-When the user asks you to do something, respond with a JSON tool call in this format:
+IMPORTANT: Only use tools when the user wants to DO or CHECK something on the system.
+For general questions, conversations, explanations, or requests like jokes/advice, RESPOND NATURALLY without using tools.
+
+When a tool is needed, respond with a JSON tool call in this format:
 {{
   "tool": "tool_name",
   "arguments": {{"arg1": "value1"}},
   "explanation": "what this will do"
 }}
 
+Examples of when NOT to use tools:
+- "tell me a joke" → Just tell a joke naturally
+- "how do I optimize Docker?" → Provide advice naturally
+- "what's the best way to..." → Answer conversationally
+- "explain kubernetes" → Explain naturally
+
+Examples of when TO use tools:
+- "check my disk space" → Use execute_command or system_status
+- "show my wifi connection" → Use network tool
+- "read the config file" → Use read_file
+- "restart docker" → Use systemd tool
+
 Available tools:
 - execute_command: Run bash commands (args: command, working_dir)
   Example: {{"tool": "execute_command", "arguments": {{"command": "cat /etc/os-release"}}, "explanation": "Check OS version"}}
   Example: {{"tool": "execute_command", "arguments": {{"command": "df -h"}}, "explanation": "Check disk space"}}
-  Use this for: OS version, hostname, date/time, uptime, specific file operations, package info
+  Example: {{"tool": "execute_command", "arguments": {{"command": "ls -la ~/projects"}}, "explanation": "List files in projects directory"}}
+  Use this for: OS version, hostname, date/time, uptime, running processes, custom commands
 
 - read_file: Read file contents (args: path)
   Example: {{"tool": "read_file", "arguments": {{"path": "/etc/hostname"}}, "explanation": "Read hostname file"}}
+  Example: {{"tool": "read_file", "arguments": {{"path": "~/.bashrc"}}, "explanation": "Read bash configuration"}}
+  Example: {{"tool": "read_file", "arguments": {{"path": "/home/peter/projects/myapp/config.yml"}}, "explanation": "Read application config"}}
+  Use this for: Reading configuration files, log files, source code, any text file
 
 - write_file: Write to files (args: path, content)
+  Example: {{"tool": "write_file", "arguments": {{"path": "~/test.txt", "content": "Hello World"}}, "explanation": "Create test file"}}
+  Use this for: Creating or updating configuration files, scripts, documents
 
 - sway: Manage Sway window manager (args: action = show-config|list-keybindings|add-keybinding|reload, key = for add-keybinding, command = for add-keybinding)
   Example: {{"tool": "sway", "arguments": {{"action": "show-config"}}, "explanation": "Show Sway configuration file"}}
@@ -266,7 +287,11 @@ Available tools:
 
 Current user request: {prompt}
 
-Respond with the appropriate JSON tool call, or if it's a question about previous output, answer based on conversation history.
+DECISION GUIDE:
+- If the request is conversational (jokes, advice, questions, explanations) → Respond naturally in plain text
+- If the request requires system action or information (check, show, list, restart, read file) → Use a tool with JSON format
+
+Respond appropriately based on the request type.
 """
         
         result = subprocess.run(
