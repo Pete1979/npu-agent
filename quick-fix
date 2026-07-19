@@ -3,7 +3,7 @@
 # Usage: cat error.log | ./quick-fix
 #   or:  ./quick-fix "paste error message here"
 
-MODEL="${QUICK_FIX_MODEL:-${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}}"
+MODEL="${QUICK_FIX_MODEL:-${LOCAL_LLM_MODEL:-qwen3.5-4b-FLM}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -p /dev/stdin ]; then

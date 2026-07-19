@@ -5,7 +5,7 @@ A local, terminal-based AI agent that runs entirely on this laptop's **AMD XDNA2
 local GitHub Copilot for system administration and coding. No cloud, no API keys.
 
 - **Engine:** Lemonade Server on the NPU, OpenAI-compatible API at `http://localhost:13305/api/v1`
-- **Default model:** `qwen3.5-9b-FLM` (newest Qwen); fast tier `qwen3.5-4b-FLM`
+- **Default model:** `qwen3.5-4b-FLM` (fast); more-capable tier `qwen3.5-9b-FLM`
 - **Capabilities:** run shell commands, connect/scan WiFi, manage systemd / Sway / Waybar,
   inspect a Kubernetes cluster, read/write files — with approval prompts on anything that
   changes state.
@@ -30,8 +30,8 @@ Install shell aliases (optional):
 
 | Alias | What |
 |---|---|
-| `ai` | interactive agent (`qwen3.5-9b`) |
-| `ai-fast` | interactive agent (`qwen3.5-4b`, faster) |
+| `ai` | interactive agent (`qwen3.5-4b`, default) |
+| `ai-big` | interactive agent (`qwen3.5-9b`, more capable) |
 | `agent "..."` | one-shot agent task |
 | `ask "..."` | quick question (no tools) |
 | `chat` | interactive chat |

@@ -12,13 +12,13 @@
 AGENT_DIR="$HOME/projects/private/npu-agent"
 
 # Models (change with: export LOCAL_LLM_MODEL=... )
-export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}"   # newest Qwen, daily driver
-LOCAL_LLM_FAST="qwen3.5-4b-FLM"                              # faster, lighter
+export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3.5-4b-FLM}"   # fast daily driver
+LOCAL_LLM_BIG="qwen3.5-9b-FLM"                               # slower, more capable
 
 # --- Agent (tool-capable: shell, wifi, systemd, sway, k8s, files) ------------
 alias agent="$AGENT_DIR/agent"                        # one-shot:  agent "check disk space"
-alias ai="$AGENT_DIR/agent -i"                        # interactive agent (qwen3.5-9b)
-alias ai-fast="$AGENT_DIR/agent -m $LOCAL_LLM_FAST -i" # interactive agent (qwen3.5-4b, faster)
+alias ai="$AGENT_DIR/agent -i"                        # interactive agent (qwen3.5-4b, default)
+alias ai-big="$AGENT_DIR/agent -m $LOCAL_LLM_BIG -i"  # interactive agent (qwen3.5-9b, more capable)
 
 # --- Plain chat / coding (no tools) ------------------------------------------
 alias ask="$AGENT_DIR/ask"                           # ask "question"  (pipe-friendly)

@@ -3,7 +3,7 @@
 # Usage: ./chat [model_name]
 # Use --no-context to skip system context
 
-MODEL="${1:-${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}}"
+MODEL="${1:-${LOCAL_LLM_MODEL:-qwen3.5-4b-FLM}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Interactive chat is handled by the tool-capable agent (Lemonade / NPU)

@@ -6,7 +6,7 @@
 #        cat file.py | ask "review this code"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MODEL="${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}"
+MODEL="${LOCAL_LLM_MODEL:-qwen3.5-4b-FLM}"
 USE_CONTEXT=true
 WORDS=()
 

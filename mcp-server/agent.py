@@ -19,7 +19,7 @@ import requests
 # Local Lemonade (NPU) OpenAI-compatible endpoint
 LEMONADE_BASE_URL = os.environ.get("LEMONADE_BASE_URL", "http://localhost:13305/api/v1")
 LEMONADE_API_KEY = os.environ.get("LEMONADE_API_KEY", "lemonade")
-DEFAULT_MODEL = os.environ.get("LOCAL_LLM_MODEL", "qwen3.5-9b-FLM")
+DEFAULT_MODEL = os.environ.get("LOCAL_LLM_MODEL", "qwen3.5-4b-FLM")
 MAX_STEPS = int(os.environ.get("LOCAL_LLM_MAX_STEPS", "8"))
 
 # ANSI Colors

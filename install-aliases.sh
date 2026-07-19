@@ -4,28 +4,25 @@
 
 INSTALL_FILE="$HOME/projects/private/npu-agent/bash_aliases.sh"
 BASHRC="$HOME/.bashrc"
+BEGIN="# >>> npu-agent aliases >>>"
+END="# <<< npu-agent aliases <<<"
 
 echo "Local NPU AI Agent Alias Installer"
 echo "==================================="
 echo ""
 
-# Check if already installed
-if grep -q "Local AI Agent Aliases" "$BASHRC" 2>/dev/null; then
-    echo "⚠️  Local AI Agent aliases already installed in ~/.bashrc"
-    echo ""
-    read -p "Reinstall anyway? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Installation cancelled."
-        exit 0
-    fi
-    # Remove old installation
-    sed -i '/# Local AI Agent Aliases/,/^$/d' "$BASHRC"
+# Remove any previous sentinel-wrapped block
+if grep -qF "$BEGIN" "$BASHRC" 2>/dev/null; then
+    sed -i "\|$BEGIN|,\|$END|d" "$BASHRC"
 fi
 
-# Add aliases to bashrc
-echo "" >> "$BASHRC"
-cat "$INSTALL_FILE" >> "$BASHRC"
-echo "" >> "$BASHRC"
+# Append a fresh, sentinel-wrapped block
+{
+    echo ""
+    echo "$BEGIN"
+    cat "$INSTALL_FILE"
+    echo "$END"
+} >> "$BASHRC"
 
 echo "✅ Aliases installed to ~/.bashrc"
 echo ""
@@ -33,8 +30,8 @@ echo "To use them now, run:"
 echo "  source ~/.bashrc"
 echo ""
 echo "Available commands:"
-echo "  ai           - Interactive agent (qwen3.5-9b, tools)"
-echo "  ai-fast      - Interactive agent (qwen3.5-4b, faster)"
+echo "  ai           - Interactive agent (qwen3.5-4b, default)"
+echo "  ai-big       - Interactive agent (qwen3.5-9b, more capable)"
 echo "  agent \"...\"   - One-shot agent request"
 echo "  ask \"...\"     - Quick question (no tools)"
 echo "  chat         - Interactive chat"
