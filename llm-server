@@ -12,7 +12,7 @@ start() {
     else
         sudo systemd-run --uid="$(id -u)" --gid="$(id -g)" \
             --setenv=HOME="$HOME" --property=LimitMEMLOCK=infinity \
-            --unit="$UNIT" --working-directory="$LEMONADE_DIR" ./lemond
+            --unit="$UNIT" --working-directory="$LEMONADE_DIR" "$LEMONADE_DIR/lemond"
     fi
     echo -n "Waiting for API"
     for _ in $(seq 1 30); do

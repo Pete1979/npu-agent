@@ -352,10 +352,20 @@ Respond appropriately based on the request type.
         except requests.exceptions.RequestException as e:
             return {"role": "assistant",
                     "content": f"[error contacting Lemonade server at {LEMONADE_BASE_URL}: {e}]"}
-        if r.status_code != 200:
+        try:
+            data = r.json()
+        except ValueError:
             return {"role": "assistant",
-                    "content": f"[Lemonade error {r.status_code}: {r.text[:500]}]"}
-        msg = r.json()["choices"][0]["message"]
+                    "content": f"[Lemonade returned non-JSON (HTTP {r.status_code}): {r.text[:300]}]"}
+        # No choices → surface the error (often a dead FLM backend) with a hint
+        if not data.get("choices"):
+            err = data.get("error")
+            detail = err.get("message") if isinstance(err, dict) else (err or r.text[:300])
+            hint = ""
+            if isinstance(detail, str) and re.search(r"connect|network|backend|not.*started", detail, re.I):
+                hint = "  →  The NPU model backend isn't responding. Run:  llm-server restart"
+            return {"role": "assistant", "content": f"[Lemonade error: {detail}]{hint}"}
+        msg = data["choices"][0]["message"]
         if isinstance(msg.get("content"), str):
             msg["content"] = re.sub(r"<think>.*?</think>", "", msg["content"], flags=re.DOTALL).strip()
         for tc in msg.get("tool_calls") or []:
