@@ -1,28 +1,40 @@
 #!/bin/bash
-# Quick question to your local LLM
-# Usage: ./ask "your question here" [model_name]
-# Add --no-context flag to skip system context
-
-if [ -z "$1" ]; then
-    echo "Usage: $0 \"your question\" [model_name] [--no-context]"
-    echo "Example: $0 \"What is Docker?\" qwen2.5-coder:7b"
-    exit 1
-fi
+# Quick question to your local NPU LLM (Lemonade). Quotes optional; pipe-friendly.
+# Usage: ask your question here
+#        ask "question" -m qwen3.5-4b-FLM
+#        ask "explain this" --no-context
+#        cat file.py | ask "review this code"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-QUESTION="$1"
 MODEL="${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}"
 USE_CONTEXT=true
+WORDS=()
 
-# Parse arguments
-shift
-for arg in "$@"; do
-    if [ "$arg" = "--no-context" ]; then
-        USE_CONTEXT=false
-    else
-        MODEL="$arg"
-    fi
+# Parse: flags are -m/--model and --no-context; everything else is the question
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --no-context) USE_CONTEXT=false ;;
+        -m|--model) shift; MODEL="$1" ;;
+        *) WORDS+=("$1") ;;
+    esac
+    shift
 done
+QUESTION="${WORDS[*]}"
+
+# Append piped stdin if present (so `cat file | ask "..."` works)
+if [ ! -t 0 ]; then
+    STDIN_DATA="$(cat -)"
+    [ -n "$STDIN_DATA" ] && QUESTION="${QUESTION}
+
+$STDIN_DATA"
+fi
+
+if [ -z "${QUESTION// /}" ]; then
+    echo "Usage: ask your question here            (quotes optional)"
+    echo "       ask \"question\" -m <model> [--no-context]"
+    echo "       cat file | ask \"review this\""
+    exit 1
+fi
 
 # Build prompt
 if [ "$USE_CONTEXT" = true ]; then
@@ -34,6 +46,6 @@ else
     PROMPT="$QUESTION"
 fi
 
-echo "Asking $MODEL..."
-echo ""
+echo "Asking $MODEL..." >&2
+echo "" >&2
 printf '%s' "$PROMPT" | python3 "$SCRIPT_DIR/mcp-server/llm_complete.py" "$MODEL"
