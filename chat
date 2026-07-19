@@ -3,23 +3,8 @@
 # Usage: ./chat [model_name]
 # Use --no-context to skip system context
 
-MODEL="${1:-qwen2.5-coder:3b}"
+MODEL="${1:-${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check if --no-context flag is present
-if [[ "$*" == *"--no-context"* ]]; then
-    SYSTEM_CONTEXT=""
-    MODEL="${1:-qwen2.5-coder:7b}"  # Reset model in case --no-context is first arg
-else
-    SYSTEM_CONTEXT="$($SCRIPT_DIR/get-system-context.sh)"
-fi
-
-echo "Starting chat with $MODEL..."
-echo "Type 'exit' or press Ctrl+D to quit"
-echo "----------------------------------------"
-
-if [ -n "$SYSTEM_CONTEXT" ]; then
-    echo "$SYSTEM_CONTEXT" | ollama run "$MODEL"
-else
-    ollama run "$MODEL"
-fi
+# Interactive chat is handled by the tool-capable agent (Lemonade / NPU)
+exec python3 "$SCRIPT_DIR/mcp-server/agent.py" -m "$MODEL" -i

@@ -11,7 +11,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUESTION="$1"
-MODEL="qwen2.5-coder:3b"
+MODEL="${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}"
 USE_CONTEXT=true
 
 # Parse arguments
@@ -36,4 +36,4 @@ fi
 
 echo "Asking $MODEL..."
 echo ""
-ollama run "$MODEL" "$PROMPT"
+printf '%s' "$PROMPT" | python3 "$SCRIPT_DIR/mcp-server/llm_complete.py" "$MODEL"

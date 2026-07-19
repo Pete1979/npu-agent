@@ -3,7 +3,7 @@
 # Usage: cat error.log | ./quick-fix
 #   or:  ./quick-fix "paste error message here"
 
-MODEL="${QUICK_FIX_MODEL:-qwen2.5-coder:3b}"
+MODEL="${QUICK_FIX_MODEL:-${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -p /dev/stdin ]; then
@@ -35,4 +35,4 @@ Provide:
 
 echo "Analyzing with $MODEL..."
 echo ""
-ollama run "$MODEL" "$PROMPT"
+printf '%s' "$PROMPT" | python3 "$SCRIPT_DIR/mcp-server/llm_complete.py" "$MODEL"

@@ -2,7 +2,7 @@
 # Get coding help from your local LLM
 # Usage: ./code-helper [model_name]
 
-MODEL="${1:-qwen2.5-coder:3b}"
+MODEL="${1:-${LOCAL_LLM_MODEL:-qwen3.5-9b-FLM}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SYSTEM_CONTEXT="$($SCRIPT_DIR/get-system-context.sh)"
@@ -26,8 +26,8 @@ while true; do
     
     echo ""
     echo "Assistant:"
-    ollama run "$MODEL" "$SYSTEM_PROMPT
+    printf '%s' "$SYSTEM_PROMPT
 
-Question: $INPUT"
+Question: $INPUT" | python3 "$SCRIPT_DIR/mcp-server/llm_complete.py" "$MODEL"
     echo ""
 done

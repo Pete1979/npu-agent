@@ -1,41 +1,34 @@
 #!/bin/bash
-# List and manage your Ollama models
-# Usage: ./models [list|switch|pull|remove]
+# List and manage local NPU models via Lemonade
+# Usage: ./models [list|installed|pull|remove]
+
+LEMONADE_DIR="${LEMONADE_DIR:-$HOME/projects/private/local-llm/lemonade/lemonade-embeddable-10.2.0-ubuntu-x64}"
+LEMONADE="$LEMONADE_DIR/lemonade"
 
 case "$1" in
     list|"")
-        echo "Available models:"
-        ollama list
+        echo "NPU (FLM) models in the catalog:"
+        "$LEMONADE" list 2>/dev/null | grep -iE 'FLM|Model' 
         ;;
-    switch)
-        echo "Select a model to chat with:"
-        ollama list
-        echo ""
-        read -p "Enter model name: " MODEL
-        ./chat "$MODEL"
+    installed)
+        echo "Pulled models:"
+        "$LEMONADE" list 2>/dev/null | awk 'NR==1 || $2=="Yes"'
         ;;
     pull)
-        echo "Popular models you can download:"
-        echo "  - llama3.2:3b (2GB) - Fast, good for quick queries"
-        echo "  - llama3.1:8b (4.9GB) - Smart, better reasoning"
-        echo "  - codellama (3.8GB) - Specialized for code"
-        echo "  - mistral (4.1GB) - Fast and capable"
-        echo "  - phi3 (2.3GB) - Small but powerful"
-        echo ""
-        read -p "Enter model name to download: " MODEL
-        ollama pull "$MODEL"
+        MODEL="$2"
+        [ -z "$MODEL" ] && read -p "Enter model name to download (e.g. qwen3-8b-FLM): " MODEL
+        "$LEMONADE" pull "$MODEL"
         ;;
     remove)
-        ollama list
-        echo ""
-        read -p "Enter model name to remove: " MODEL
-        ollama rm "$MODEL"
+        MODEL="$2"
+        [ -z "$MODEL" ] && read -p "Enter model name to remove: " MODEL
+        "$LEMONADE" delete "$MODEL"
         ;;
     *)
-        echo "Usage: $0 [list|switch|pull|remove]"
-        echo "  list   - Show installed models (default)"
-        echo "  switch - Select and chat with a model"
-        echo "  pull   - Download a new model"
-        echo "  remove - Remove an installed model"
+        echo "Usage: $0 [list|installed|pull <name>|remove <name>]"
+        echo "  list       - Show NPU/FLM catalog (default)"
+        echo "  installed  - Show already-downloaded models"
+        echo "  pull       - Download a model"
+        echo "  remove     - Delete a downloaded model"
         ;;
 esac

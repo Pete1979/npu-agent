@@ -4,10 +4,11 @@
 
 ## What is this?
 
-An AI agent that combines your local LLM (qwen2.5-coder:3b) with MCP (Model Context Protocol) to execute commands and manage your system.
+An AI agent that combines your local NPU LLM (Lemonade Server + FastFlowLM, default `qwen3.5-9b-FLM`) with MCP-style tools to execute commands and manage your system — like a local Copilot. No cloud, no API keys; all inference runs on the AMD XDNA2 NPU.
 
 **Features:**
-- 🖥️ Linux system management (Sway, Waybar, NetworkManager, Systemd)
+- 🖥️ Linux system management (Sway, Waybar, NetworkManager incl. WiFi connect, Systemd)
+- ⚙️ Multi-step native tool-calling (chains tools until the task is done)
 - ☸️ Kubernetes cluster management
 - ⚡ Fast local execution (no cloud, no API keys)
 - 🔒 Safe with approval confirmations

@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 """
 LLM Agent with MCP Integration
-Connects Ollama LLM with MCP server for command execution
+Connects a local LLM (Lemonade Server on the AMD NPU) with MCP-style tools
+for system management and coding. OpenAI-compatible native tool-calling.
 """
 
 import json
+import re
 import subprocess
 import sys
 import os
+import uuid
 import asyncio
 from typing import Optional, Dict, Any
+
+import requests
+
+# Local Lemonade (NPU) OpenAI-compatible endpoint
+LEMONADE_BASE_URL = os.environ.get("LEMONADE_BASE_URL", "http://localhost:13305/api/v1")
+LEMONADE_API_KEY = os.environ.get("LEMONADE_API_KEY", "lemonade")
+DEFAULT_MODEL = os.environ.get("LOCAL_LLM_MODEL", "qwen3.5-9b-FLM")
+MAX_STEPS = int(os.environ.get("LOCAL_LLM_MAX_STEPS", "8"))
 
 # ANSI Colors
 GREEN = "\033[92m"
@@ -20,11 +31,31 @@ RESET = "\033[0m"
 BOLD = "\033[1m"
 
 class MCPAgent:
-    def __init__(self, model="qwen2.5-coder:3b", auto_approve=False):
+    def __init__(self, model=DEFAULT_MODEL, auto_approve=False):
         self.model = model
         self.auto_approve = auto_approve
-        self.conversation_history = []
         self.system_context = self._get_system_context()
+        self.tools = self._get_tool_schemas()
+        self.messages = [{"role": "system", "content": self._system_prompt()}]
+
+    def _system_prompt(self) -> str:
+        return f"""You are a local AI assistant running on Peter's Linux laptop (Ubuntu 26.04, Sway WM) \
+via the AMD NPU. You help with system administration and software development, similar to GitHub Copilot.
+
+You have tools to inspect and configure this machine: run shell commands, read/write files, manage \
+WiFi and networking (NetworkManager), systemd services, Sway/Waybar, and a Kubernetes cluster.
+
+Guidelines:
+- Use a tool when the user wants to DO or CHECK something on the system. For general questions, \
+  explanations, or coding help that needs no system access, just answer directly.
+- Prefer the specific tool (network, systemd, sway, kubernetes) over raw execute_command when one fits.
+- After tools return, summarize the result for the user concisely. Chain multiple tool calls when a task \
+  needs several steps (e.g. scan WiFi, then connect).
+- Be concise and direct.
+
+Current system context:
+{self.system_context}
+"""
         
     def _get_system_context(self):
         """Get system context"""
@@ -129,9 +160,24 @@ class MCPAgent:
             return {"output": result.stdout}
         
         elif action == "wifi-list":
+            subprocess.run(["nmcli", "device", "wifi", "rescan"], capture_output=True, text=True)
             result = subprocess.run(["nmcli", "device", "wifi", "list"], capture_output=True, text=True)
             return {"output": result.stdout}
-        
+
+        elif action == "wifi-connect":
+            ssid = args.get("ssid")
+            password = args.get("password")
+            if not ssid:
+                return {"error": "'ssid' is required to connect to WiFi"}
+            subprocess.run(["nmcli", "device", "wifi", "rescan"], capture_output=True, text=True)
+            cmd = ["nmcli", "device", "wifi", "connect", ssid]
+            if password:
+                cmd += ["password", password]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                return {"status": "success", "output": result.stdout.strip()}
+            return {"error": result.stderr.strip() or result.stdout.strip()}
+
         elif action == "set-dns":
             connection = args.get("connection")
             dns = args.get("dns")
@@ -149,7 +195,7 @@ class MCPAgent:
             return {"error": result.stderr}
         
         else:
-            return {"error": f"Unknown action: {action}. Available: status, connections, wifi-list, set-dns"}
+            return {"error": f"Unknown action: {action}. Available: status, connections, wifi-list, wifi-connect, set-dns"}
     
     def _systemd_tool(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Manage systemd services"""
@@ -194,17 +240,9 @@ class MCPAgent:
         else:
             return {"error": f"Unknown action: {action}. Available: status, restart, enable, disable, logs, list"}
     
-    def _ask_llm(self, prompt: str) -> str:
-        """Ask the LLM a question"""
-        # Build conversation history
+    def _legacy_prompt_unused(self, prompt: str) -> str:
+        """Deprecated: old text-protocol prompt builder, kept for reference."""
         history_context = ""
-        if self.conversation_history:
-            history_context = "\n\nPrevious conversation:\n"
-            for entry in self.conversation_history[-3:]:  # Last 3 exchanges
-                history_context += f"\nUser: {entry['user']}\n"
-                if 'tool_result' in entry:
-                    history_context += f"Tool result: {entry['tool_result'][:500]}...\n"  # Truncate long outputs
-        
         full_prompt = f"""{self.system_context}
 {history_context}
 
@@ -293,16 +331,106 @@ DECISION GUIDE:
 
 Respond appropriately based on the request type.
 """
-        
-        result = subprocess.run(
-            ["ollama", "run", self.model, full_prompt],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        
-        return result.stdout.strip()
-    
+        return full_prompt
+
+    def _chat(self, messages):
+        """Call the local Lemonade (NPU) OpenAI-compatible endpoint with tool support."""
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "tools": self.tools,
+            "temperature": 0.3,
+            "stream": False,
+        }
+        try:
+            r = requests.post(
+                f"{LEMONADE_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {LEMONADE_API_KEY}"},
+                json=payload,
+                timeout=600,
+            )
+        except requests.exceptions.RequestException as e:
+            return {"role": "assistant",
+                    "content": f"[error contacting Lemonade server at {LEMONADE_BASE_URL}: {e}]"}
+        if r.status_code != 200:
+            return {"role": "assistant",
+                    "content": f"[Lemonade error {r.status_code}: {r.text[:500]}]"}
+        msg = r.json()["choices"][0]["message"]
+        if isinstance(msg.get("content"), str):
+            msg["content"] = re.sub(r"<think>.*?</think>", "", msg["content"], flags=re.DOTALL).strip()
+        for tc in msg.get("tool_calls") or []:
+            if not tc.get("id"):
+                tc["id"] = f"call_{uuid.uuid4().hex[:8]}"
+        return msg
+
+    def _get_tool_schemas(self):
+        """OpenAI-format function schemas mirroring the internal tools."""
+        return [
+            {"type": "function", "function": {
+                "name": "execute_command",
+                "description": "Run a bash shell command on this Linux machine and return stdout/stderr/returncode. Use for anything without a dedicated tool.",
+                "parameters": {"type": "object", "properties": {
+                    "command": {"type": "string", "description": "The bash command to run"},
+                    "working_dir": {"type": "string", "description": "Optional working directory"}},
+                    "required": ["command"]}}},
+            {"type": "function", "function": {
+                "name": "read_file",
+                "description": "Read and return the contents of a text file.",
+                "parameters": {"type": "object", "properties": {
+                    "path": {"type": "string", "description": "File path (~ allowed)"}},
+                    "required": ["path"]}}},
+            {"type": "function", "function": {
+                "name": "write_file",
+                "description": "Create or overwrite a text file with the given content.",
+                "parameters": {"type": "object", "properties": {
+                    "path": {"type": "string"}, "content": {"type": "string"}},
+                    "required": ["path", "content"]}}},
+            {"type": "function", "function": {
+                "name": "network",
+                "description": "Manage networking via NetworkManager: check device status, list connections, scan/list WiFi, connect to a WiFi network, or set DNS.",
+                "parameters": {"type": "object", "properties": {
+                    "action": {"type": "string", "enum": ["status", "connections", "wifi-list", "wifi-connect", "set-dns"]},
+                    "ssid": {"type": "string", "description": "WiFi SSID for wifi-connect"},
+                    "password": {"type": "string", "description": "WiFi password for wifi-connect (omit for open networks)"},
+                    "connection": {"type": "string", "description": "Connection name for set-dns"},
+                    "dns": {"type": "string", "description": "DNS server(s) for set-dns"}},
+                    "required": ["action"]}}},
+            {"type": "function", "function": {
+                "name": "systemd",
+                "description": "Manage systemd services: status, restart, enable, disable, logs, list.",
+                "parameters": {"type": "object", "properties": {
+                    "action": {"type": "string", "enum": ["status", "restart", "enable", "disable", "logs", "list"]},
+                    "service": {"type": "string"}, "lines": {"type": "string"}},
+                    "required": ["action"]}}},
+            {"type": "function", "function": {
+                "name": "sway",
+                "description": "Manage the Sway window manager config: show-config, list-keybindings, add-keybinding, reload.",
+                "parameters": {"type": "object", "properties": {
+                    "action": {"type": "string", "enum": ["show-config", "list-keybindings", "add-keybinding", "reload"]},
+                    "key": {"type": "string"}, "command": {"type": "string"}},
+                    "required": ["action"]}}},
+            {"type": "function", "function": {
+                "name": "waybar",
+                "description": "Manage the Waybar status bar: show-config, restart, reload.",
+                "parameters": {"type": "object", "properties": {
+                    "action": {"type": "string", "enum": ["show-config", "restart", "reload"]}},
+                    "required": ["action"]}}},
+            {"type": "function", "function": {
+                "name": "kubernetes",
+                "description": "Inspect the Kubernetes cluster via kubectl.",
+                "parameters": {"type": "object", "properties": {
+                    "action": {"type": "string", "enum": ["pods", "deployments", "services", "namespaces", "all", "check-health", "logs", "describe"]},
+                    "namespace": {"type": "string"}, "pod": {"type": "string"},
+                    "tail": {"type": "string"}, "resource": {"type": "string"}, "container": {"type": "string"}},
+                    "required": ["action"]}}},
+            {"type": "function", "function": {
+                "name": "system_status",
+                "description": "Summarize system resources (cpu, memory, disk, network, docker, kubernetes, or all).",
+                "parameters": {"type": "object", "properties": {
+                    "component": {"type": "string", "enum": ["cpu", "memory", "disk", "network", "docker", "kubernetes", "all"]}},
+                    "required": ["component"]}}},
+        ]
+
     def _execute_tool(self, tool_call: dict) -> dict:
         """Execute an MCP tool"""
         tool = tool_call.get("tool")
@@ -527,15 +655,23 @@ Respond appropriately based on the request type.
         if self.auto_approve:
             return True
         
-        # Always require confirmation for file write operations
+        # Require confirmation for state-changing actions
         require_confirmation = tool == 'write_file'
-        
-        # Check for dangerous commands in execute_command
+
         if tool == 'execute_command':
             cmd = args.get('command', '')
-            dangerous_patterns = ['rm ', 'rmdir', 'rm -', 'unlink', 'shred', 'dd ', 'mkfs', 'fdisk', 'parted']
+            dangerous_patterns = ['rm ', 'rmdir', 'rm -', 'unlink', 'shred', 'dd ', 'mkfs', 'fdisk', 'parted', '>', 'tee ', 'chmod', 'chown', 'kill', 'reboot', 'shutdown', 'systemctl', 'nmcli', 'apt', 'sudo']
             if any(pattern in cmd for pattern in dangerous_patterns):
                 require_confirmation = True
+
+        if tool == 'network' and args.get('action') in ('set-dns', 'wifi-connect'):
+            require_confirmation = True
+        if tool == 'systemd' and args.get('action') in ('restart', 'enable', 'disable', 'stop', 'start'):
+            require_confirmation = True
+        if tool == 'sway' and args.get('action') == 'add-keybinding':
+            require_confirmation = True
+        if tool == 'waybar' and args.get('action') == 'restart':
+            require_confirmation = True
         
         # Auto-approve safe operations
         if not require_confirmation:
@@ -561,81 +697,75 @@ Respond appropriately based on the request type.
         
         return response == 'y'
     
+    def _format_result(self, result):
+        """Render a tool result dict/string for display and for feeding back to the model."""
+        if isinstance(result, dict):
+            parts = []
+            for key, value in result.items():
+                if value not in (None, ""):
+                    parts.append(f"{key}: {value}")
+            return "\n".join(parts) if parts else "(no output)"
+        return str(result)
+
     def process_request(self, user_input: str):
-        """Process user request"""
-        print(f"\n{GREEN}🤔 Thinking...{RESET}")
-        
-        # Ask LLM
-        response = self._ask_llm(user_input)
-        
-        # Check if response is a tool call
-        try:
-            # Strip markdown code blocks if present
-            cleaned_response = response.strip()
-            if cleaned_response.startswith('```'):
-                # Extract JSON from code block
-                lines = cleaned_response.split('\n')
-                # Remove first line (```json or ```) and last line (```)
-                if lines[0].startswith('```'):
-                    lines = lines[1:]
-                if lines and lines[-1].strip() == '```':
-                    lines = lines[:-1]
-                cleaned_response = '\n'.join(lines).strip()
-            
-            # Try to parse as JSON
-            if cleaned_response.startswith('{'):
-                tool_call = json.loads(cleaned_response)
-                
-                if "tool" in tool_call:
-                    # Confirm with user
-                    if self._confirm_action(tool_call):
-                        print(f"\n{GREEN}✓ Executing...{RESET}")
+        """Process a user request with a multi-step native tool-calling loop."""
+        self.messages.append({"role": "user", "content": user_input})
+
+        for _step in range(MAX_STEPS):
+            print(f"\n{GREEN}🤔 Thinking...{RESET}")
+            msg = self._chat(self.messages)
+            self.messages.append(msg)
+
+            tool_calls = msg.get("tool_calls") or []
+            if not tool_calls:
+                content = msg.get("content") or ""
+                print(f"\n{BLUE}💬 Response:{RESET}")
+                print(content)
+                return content
+
+            if msg.get("content"):
+                print(f"\n{BLUE}💬 {msg['content']}{RESET}")
+
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                name = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+
+                tool_call = {"tool": name, "arguments": args,
+                             "explanation": f"{name}: {json.dumps(args)}"}
+
+                if self._confirm_action(tool_call):
+                    print(f"{GREEN}✓ Executing {name}...{RESET}")
+                    try:
                         result = self._execute_tool(tool_call)
-                        
-                        print(f"\n{GREEN}✓ Result:{RESET}")
-                        result_str = ""
-                        if isinstance(result, dict):
-                            for key, value in result.items():
-                                if value:
-                                    print(f"\n{BOLD}{key}:{RESET}")
-                                    print(value)
-                                    result_str += f"{key}: {value}\n"
-                        else:
-                            print(result)
-                            result_str = str(result)
-                        
-                        # Store in conversation history
-                        self.conversation_history.append({
-                            'user': user_input,
-                            'tool': tool_call['tool'],
-                            'tool_result': result_str
-                        })
-                        
-                        return result
-                    else:
-                        print(f"{RED}✗ Action cancelled{RESET}")
-                        return None
-        except json.JSONDecodeError:
-            pass
-        
-        # Not a tool call, just print response
-        print(f"\n{BLUE}💬 Response:{RESET}")
-        print(response)
-        
-        # Store text response in history
-        self.conversation_history.append({
-            'user': user_input,
-            'response': response
-        })
-        
-        return response
+                    except Exception as e:  # surface tool errors back to the model
+                        result = {"error": str(e)}
+                else:
+                    print(f"{RED}✗ Action denied by user{RESET}")
+                    result = {"error": "User denied this action."}
+
+                result_str = self._format_result(result)
+                print(f"{GREEN}✓ Result:{RESET}\n{result_str}")
+
+                self.messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.get("id"),
+                    "name": name,
+                    "content": result_str[:8000],
+                })
+
+        print(f"{YELLOW}⚠ Reached max steps ({MAX_STEPS}). Stopping.{RESET}")
+        return None
 
 def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description="LLM Agent with MCP")
+    parser = argparse.ArgumentParser(description="Local LLM agent (Lemonade/NPU) with system + coding tools")
     parser.add_argument("request", nargs="*", help="Your request to the LLM")
-    parser.add_argument("-m", "--model", default="qwen2.5-coder:3b", help="Ollama model to use")
+    parser.add_argument("-m", "--model", default=DEFAULT_MODEL, help=f"Local model to use (default: {DEFAULT_MODEL})")
     parser.add_argument("-y", "--yes", action="store_true", help="Auto-approve all actions (dangerous!)")
     parser.add_argument("-i", "--interactive", action="store_true", help="Interactive mode")
     
@@ -644,8 +774,8 @@ def main():
     agent = MCPAgent(model=args.model, auto_approve=args.yes)
     
     if args.interactive:
-        print(f"{BOLD}{GREEN}🤖 LLM Agent with MCP{RESET}")
-        print(f"{BLUE}Model: {args.model}{RESET}")
+        print(f"{BOLD}{GREEN}🤖 Local AI agent (NPU){RESET}")
+        print(f"{BLUE}Model: {args.model}  •  Endpoint: {LEMONADE_BASE_URL}{RESET}")
         print(f"{YELLOW}Type 'exit' to quit{RESET}\n")
         
         while True:

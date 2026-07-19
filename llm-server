@@ -1,0 +1,36 @@
+#!/bin/bash
+# Control the local Lemonade (NPU) LLM server.
+# Usage: ./llm-server [start|stop|restart|status|logs]
+
+LEMONADE_DIR="${LEMONADE_DIR:-$HOME/projects/private/local-llm/lemonade/lemonade-embeddable-10.2.0-ubuntu-x64}"
+UNIT="lemond-user"
+API="${LEMONADE_BASE_URL:-http://localhost:13305/api/v1}"
+
+start() {
+    if systemctl is-active --quiet "$UNIT"; then
+        echo "Already running."
+    else
+        sudo systemd-run --uid="$(id -u)" --gid="$(id -g)" \
+            --setenv=HOME="$HOME" --property=LimitMEMLOCK=infinity \
+            --unit="$UNIT" --working-directory="$LEMONADE_DIR" ./lemond
+    fi
+    echo -n "Waiting for API"
+    for _ in $(seq 1 30); do
+        if curl -s "$API/models" >/dev/null 2>&1; then echo " ... up"; return 0; fi
+        echo -n "."; sleep 2
+    done
+    echo " ... timed out"; return 1
+}
+
+case "$1" in
+    start)   start ;;
+    stop)    sudo systemctl stop "$UNIT" && echo "Stopped." ;;
+    restart) sudo systemctl stop "$UNIT" 2>/dev/null; start ;;
+    status)
+        systemctl status "$UNIT" --no-pager | head -n 4
+        echo ""
+        curl -s "$API/models" 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);print("Loaded/available:", ", ".join(m["id"] for m in d.get("data",[])) or "(none)")' 2>/dev/null || echo "API not responding"
+        ;;
+    logs)    journalctl -u "$UNIT" -f ;;
+    *)       echo "Usage: $0 [start|stop|restart|status|logs]" ;;
+esac
