@@ -12,7 +12,7 @@ import requests
 
 BASE = os.environ.get("LEMONADE_BASE_URL", "http://localhost:13305/api/v1")
 KEY = os.environ.get("LEMONADE_API_KEY", "lemonade")
-MODEL = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("LOCAL_LLM_MODEL", "qwen3.5-4b-FLM")
+MODEL = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("LOCAL_LLM_MODEL", "qwen3.6-moe-35b-a3b-FLM")
 
 prompt = sys.stdin.read()
 try:

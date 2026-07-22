@@ -2,7 +2,7 @@
 # Get coding help from your local LLM
 # Usage: ./code-helper [model_name]
 
-MODEL="${1:-${LOCAL_LLM_MODEL:-qwen3.5-4b-FLM}}"
+MODEL="${1:-${LOCAL_LLM_MODEL:-qwen3.6-moe-35b-a3b-FLM}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SYSTEM_CONTEXT="$($SCRIPT_DIR/get-system-context.sh)"
